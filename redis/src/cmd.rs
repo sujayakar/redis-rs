@@ -87,9 +87,10 @@ pub struct Cmd {
 }
 
 #[cfg_attr(
-    not(feature = "safe_iterators"),
+    feature = "unsafe_iterators",
     deprecated(
-        note = "Deprecated due to the fact that this implementation silently stops at the first value that can't be converted to T. Enable the feature `safe_iterators` for a safe version."
+        since = "0.31.0",
+        note = "This iterator implementation has a critical bug: it silently stops at the first value that can't be converted to T, potentially causing data loss. Please remove the `unsafe_iterators` feature flag to use the safe implementation that properly propagates errors."
     )
 )]
 /// Represents a redis iterator.
@@ -97,24 +98,25 @@ pub struct Iter<'a, T: FromRedisValue> {
     iter: CheckedIter<'a, T>,
 }
 
-#[cfg(not(feature = "safe_iterators"))]
+#[cfg(feature = "unsafe_iterators")]
 impl<T: FromRedisValue> Iterator for Iter<'_, T> {
     type Item = T;
 
     #[inline]
     fn next(&mut self) -> Option<T> {
-        // use the checked iterator, but keep the behavior of the deprecated
-        // iterator.  This will return silently `None` if an error occurs.
+        // WARNING: This implementation silently drops errors!
+        // This is the old behavior kept for backward compatibility only.
         self.iter.next()?.ok()
     }
 }
 
-#[cfg(feature = "safe_iterators")]
+#[cfg(not(feature = "unsafe_iterators"))]
 impl<T: FromRedisValue> Iterator for Iter<'_, T> {
     type Item = RedisResult<T>;
 
     #[inline]
     fn next(&mut self) -> Option<RedisResult<T>> {
+        // This is the safe implementation that properly propagates errors
         self.iter.next()
     }
 }
@@ -181,9 +183,10 @@ enum IterOrFuture<'a, T: FromRedisValue + 'a> {
 /// Represents a redis iterator that can be used with async connections.
 #[cfg(feature = "aio")]
 #[cfg_attr(
-    all(feature = "aio", not(feature = "safe_iterators")),
+    all(feature = "aio", feature = "unsafe_iterators"),
     deprecated(
-        note = "Deprecated due to the fact that this implementation silently stops at the first value that can't be converted to T. Enable the feature `safe_iterators` for a safe version."
+        since = "0.31.0",
+        note = "This iterator implementation has a critical bug: it silently stops at the first value that can't be converted to T, potentially causing data loss. Please remove the `unsafe_iterators` feature flag to use the safe implementation that properly propagates errors."
     )
 )]
 pub struct AsyncIter<'a, T: FromRedisValue + 'a> {
@@ -239,7 +242,7 @@ impl<'a, T: FromRedisValue + 'a + Unpin + Send> AsyncIter<'a, T> {
     /// # Ok(())
     /// # }
     /// ```
-    #[cfg(feature = "safe_iterators")]
+    #[cfg(not(feature = "unsafe_iterators"))]
     #[inline]
     pub async fn next_item(&mut self) -> Option<RedisResult<T>> {
         StreamExt::next(self).await
@@ -259,7 +262,11 @@ impl<'a, T: FromRedisValue + 'a + Unpin + Send> AsyncIter<'a, T> {
     /// # Ok(())
     /// # }
     /// ```
-    #[cfg(not(feature = "safe_iterators"))]
+    #[cfg(feature = "unsafe_iterators")]
+    #[deprecated(
+        since = "0.31.0",
+        note = "This method silently drops errors. Use the safe version by removing the unsafe_iterators feature flag."
+    )]
     #[inline]
     pub async fn next_item(&mut self) -> Option<T> {
         StreamExt::next(self).await?.ok()
@@ -1086,5 +1093,257 @@ mod tests {
         assert_eq!(c.arg_idx(2), Some(&b"42"[..]));
         assert_eq!(c.arg_idx(3), None);
         assert_eq!(c.arg_idx(4), None);
+    }
+
+    // Iterator safety tests
+    #[test]
+    fn test_iterator_error_handling() {
+        use crate::{Value, RedisResult};
+        use crate::ConnectionLike;
+        
+        // Create a mock connection that returns values that can't all be converted to i32
+        struct MockConnection {
+            responses: Vec<Value>,
+            call_count: usize,
+        }
+        
+        impl ConnectionLike for MockConnection {
+            fn req_packed_command(&mut self, _: &[u8]) -> RedisResult<Value> {
+                if self.call_count < self.responses.len() {
+                    let response = self.responses[self.call_count].clone();
+                    self.call_count += 1;
+                    Ok(response)
+                } else {
+                    Ok(Value::Array(vec![Value::Int(0), Value::Array(vec![])]))
+                }
+            }
+
+            fn req_command(&mut self, _: &super::Cmd) -> RedisResult<Value> {
+                self.req_packed_command(&[])
+            }
+
+            fn req_packed_commands(
+                &mut self,
+                _: &[u8],
+                _: usize,
+                _: usize,
+            ) -> RedisResult<Vec<Value>> {
+                Ok(vec![])
+            }
+
+            fn get_db(&self) -> i64 {
+                0
+            }
+
+            fn check_connection(&mut self) -> bool {
+                true
+            }
+
+            fn is_open(&self) -> bool {
+                true
+            }
+        }
+
+        // Test data: mix of valid integers and invalid values
+        let test_data = vec![
+            Value::Int(42),
+            Value::BulkString(b"not_a_number".to_vec()), // This will fail conversion to i32
+            Value::Int(123),
+            Value::Nil, // This will also fail conversion to i32
+            Value::Int(456),
+        ];
+
+        // Create the mock connection
+        let mut con = MockConnection {
+            responses: vec![
+                // First response: cursor + values
+                Value::Array(vec![
+                    Value::BulkString(b"5".to_vec()), // cursor
+                    Value::Array(test_data.clone()),
+                ]),
+                // Second response: cursor 0 (end) + empty values
+                Value::Array(vec![
+                    Value::BulkString(b"0".to_vec()),
+                    Value::Array(vec![]),
+                ]),
+            ],
+            call_count: 0,
+        };
+
+        // Test the iterator
+        let mut cmd = super::cmd("SCAN");
+        cmd.cursor_arg(0);
+        
+        let iter = cmd.iter::<i32>(&mut con).unwrap();
+        let results: Vec<_> = iter.collect();
+
+        // Check behavior based on feature flag
+        #[cfg(not(feature = "unsafe_iterators"))]
+        {
+            // Safe behavior: should get 5 results (3 Ok, 2 Err)
+            assert_eq!(results.len(), 5);
+            
+            // Check that we got the right pattern of successes and failures
+            assert!(results[0].is_ok() && results[0].as_ref().unwrap() == &42);
+            assert!(results[1].is_err()); // "not_a_number" can't convert to i32
+            assert!(results[2].is_ok() && results[2].as_ref().unwrap() == &123);
+            assert!(results[3].is_err()); // Nil can't convert to i32
+            assert!(results[4].is_ok() && results[4].as_ref().unwrap() == &456);
+        }
+
+        #[cfg(feature = "unsafe_iterators")]
+        {
+            // Unsafe behavior: iterator stops completely at the first error!
+            // This is the CRITICAL BUG: we lose ALL remaining data after the first conversion error
+            assert_eq!(results.len(), 1); // Only gets the first value before hitting the error
+            assert_eq!(results[0], 42);
+            // Values 123 and 456 are NEVER seen because the iterator stopped at "not_a_number"
+        }
+    }
+
+    #[test]
+    fn test_iterator_cursor_handling() {
+        use crate::{Value, RedisResult};
+        use crate::ConnectionLike;
+        
+        // Mock connection that simulates paginated results
+        struct MockConnection {
+            call_count: usize,
+        }
+        
+        impl ConnectionLike for MockConnection {
+            fn req_packed_command(&mut self, _: &[u8]) -> RedisResult<Value> {
+                self.call_count += 1;
+                
+                match self.call_count {
+                    1 => {
+                        // First page: cursor=10, values=[1,2,3]
+                        Ok(Value::Array(vec![
+                            Value::BulkString(b"10".to_vec()),
+                            Value::Array(vec![
+                                Value::Int(1),
+                                Value::Int(2),
+                                Value::Int(3),
+                            ]),
+                        ]))
+                    }
+                    2 => {
+                        // Second page: cursor=0 (end), values=[4,5]
+                        Ok(Value::Array(vec![
+                            Value::BulkString(b"0".to_vec()),
+                            Value::Array(vec![
+                                Value::Int(4),
+                                Value::Int(5),
+                            ]),
+                        ]))
+                    }
+                    _ => panic!("Unexpected call to req_packed_command"),
+                }
+            }
+
+            fn req_command(&mut self, _: &super::Cmd) -> RedisResult<Value> {
+                self.req_packed_command(&[])
+            }
+
+            fn req_packed_commands(
+                &mut self,
+                _: &[u8],
+                _: usize,
+                _: usize,
+            ) -> RedisResult<Vec<Value>> {
+                Ok(vec![])
+            }
+
+            fn get_db(&self) -> i64 {
+                0
+            }
+
+            fn check_connection(&mut self) -> bool {
+                true
+            }
+
+            fn is_open(&self) -> bool {
+                true
+            }
+        }
+
+        let mut con = MockConnection { call_count: 0 };
+        
+        let mut cmd = super::cmd("SCAN");
+        cmd.cursor_arg(0);
+        
+        let iter = cmd.iter::<i32>(&mut con).unwrap();
+        
+        #[cfg(not(feature = "unsafe_iterators"))]
+        {
+            let results: Vec<_> = iter.collect();
+            assert_eq!(results.len(), 5);
+            for (i, result) in results.iter().enumerate() {
+                assert!(result.is_ok());
+                assert_eq!(*result.as_ref().unwrap(), (i + 1) as i32);
+            }
+        }
+        
+        #[cfg(feature = "unsafe_iterators")]
+        {
+            let results: Vec<_> = iter.collect();
+            assert_eq!(results, vec![1, 2, 3, 4, 5]);
+        }
+        
+        // Verify that we made exactly 2 calls to fetch both pages
+        assert_eq!(con.call_count, 2);
+    }
+
+    #[test]
+    fn test_iterator_empty_results() {
+        use crate::{Value, RedisResult};
+        use crate::ConnectionLike;
+        
+        struct MockConnection;
+        
+        impl ConnectionLike for MockConnection {
+            fn req_packed_command(&mut self, _: &[u8]) -> RedisResult<Value> {
+                // Return empty results
+                Ok(Value::Array(vec![
+                    Value::BulkString(b"0".to_vec()),
+                    Value::Array(vec![]),
+                ]))
+            }
+
+            fn req_command(&mut self, _: &super::Cmd) -> RedisResult<Value> {
+                self.req_packed_command(&[])
+            }
+
+            fn req_packed_commands(
+                &mut self,
+                _: &[u8],
+                _: usize,
+                _: usize,
+            ) -> RedisResult<Vec<Value>> {
+                Ok(vec![])
+            }
+
+            fn get_db(&self) -> i64 {
+                0
+            }
+
+            fn check_connection(&mut self) -> bool {
+                true
+            }
+
+            fn is_open(&self) -> bool {
+                true
+            }
+        }
+
+        let mut con = MockConnection;
+        
+        let mut cmd = super::cmd("SCAN");
+        cmd.cursor_arg(0);
+        
+        let iter = cmd.iter::<i32>(&mut con).unwrap();
+        let results: Vec<_> = iter.collect();
+        
+        assert_eq!(results.len(), 0);
     }
 }

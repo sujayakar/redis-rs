@@ -1161,29 +1161,26 @@ mod basic {
         let mut unseen = HashSet::new();
 
         for x in 0..1000 {
-            redis::cmd("SADD").arg("foo").arg(x).exec(&mut con).unwrap();
+            con.set(x, x).unwrap();
             unseen.insert(x);
         }
 
-        let iter = redis::cmd("SSCAN")
-            .arg("foo")
+        let iter = redis::cmd("SCAN")
             .cursor_arg(0)
             .clone()
             .iter(&mut con)
             .unwrap();
 
-        #[cfg(feature = "safe_iterators")]
-        let iter = iter.map(std::result::Result::unwrap);
-
+        // The iterator now returns RedisResult<T> by default, so we need to handle it
         for x in iter {
-            let x: usize = x;
+            let x: usize = x.unwrap(); // Unwrap the Result to get the value
             unseen.remove(&x);
         }
 
         assert_eq!(unseen.len(), 0);
     }
 
-    #[cfg(feature = "safe_iterators")]
+    // Safe iterator behavior is now the default - no feature flag needed
     #[test]
     fn test_checked_scanning_error() {
         const KEY_COUNT: u32 = 1000;
@@ -1255,10 +1252,9 @@ mod basic {
             .hscan_match::<&str, &str, (String, usize)>("foo", "key_0_*")
             .unwrap();
 
-        #[cfg(feature = "safe_iterators")]
-        let iter = iter.map(std::result::Result::unwrap);
-
-        for (_field, value) in iter {
+        // The iterator now returns RedisResult<(String, usize)> by default
+        for item in iter {
+            let (_field, value) = item.unwrap(); // Unwrap the Result to get the tuple
             unseen.remove(&value);
         }
 
@@ -2077,11 +2073,9 @@ mod basic {
         let iter: redis::Iter<'_, (String, isize)> = con.hscan("my_hash").unwrap();
         let mut found = HashSet::new();
 
-        #[cfg(feature = "safe_iterators")]
-        let iter = iter.map(std::result::Result::unwrap);
-
+        // The iterator now returns RedisResult<(String, isize)> by default
         for item in iter {
-            found.insert(item);
+            found.insert(item.unwrap()); // Unwrap the Result to get the tuple
         }
 
         assert_eq!(found.len(), 2);
@@ -2160,10 +2154,8 @@ mod basic {
 
         let mut counter = 0;
         for kv in iter {
-            #[cfg(feature = "safe_iterators")]
-            let kv = kv.unwrap();
-
-            let (key, num) = kv;
+            // The iterator now returns RedisResult<(String, u32)> by default
+            let (key, num) = kv.unwrap(); // Unwrap the Result to get the tuple
 
             // Check if queried tuple is in the original map
             assert_eq!(map.get(key.as_str()).unwrap(), &num);

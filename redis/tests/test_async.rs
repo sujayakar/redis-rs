@@ -586,8 +586,8 @@ mod basic_async {
                     .unwrap();
 
                 while let Some(x) = iter.next_item().await {
-                    #[cfg(feature = "safe_iterators")]
-                    let x = x?;
+                    // The iterator now returns RedisResult<T> by default
+                    let x = x?; // Unwrap the Result to get the value
 
                     // if this assertion fails, too many items were returned by the iterator.
                     assert!(unseen.remove(&x));
@@ -634,8 +634,8 @@ mod basic_async {
                     .unwrap();
 
                 while let Some(item) = iter.next_item().await {
-                    #[cfg(feature = "safe_iterators")]
-                    let item = item?;
+                    // The iterator now returns RedisResult<T> by default
+                    let item = item?; // Unwrap the Result to get the value
 
                     // if this assertion fails, too many items were returned by the iterator.
                     assert!(unseen.remove(&item));
@@ -682,8 +682,8 @@ mod basic_async {
                     .unwrap();
 
                 while let Some(item) = iter.next_item().await {
-                    #[cfg(feature = "safe_iterators")]
-                    let item = item?;
+                    // The iterator now returns RedisResult<T> by default
+                    let item = item?; // Unwrap the Result to get the value
 
                     // if this assertion fails, too many items were returned by the iterator.
                     assert!(unseen.remove(&item));
@@ -1018,7 +1018,7 @@ mod basic_async {
             .unwrap();
         }
 
-        #[cfg(feature = "safe_iterators")]
+        // Safe iterator behavior is now the default - no feature flag needed
         #[rstest]
         // Test issue of AsyncCommands::scan not returning keys because wrong assumptions about the key type were made
         // https://github.com/redis-rs/redis-rs/issues/1309
