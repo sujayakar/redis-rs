@@ -6,3 +6,9 @@ mod dns;
 
 #[cfg(feature = "aio")]
 pub use dns::AsyncDNSResolver;
+
+#[cfg(all(feature = "aio", feature = "hickory-dns"))]
+mod hickory;
+
+#[cfg(all(feature = "aio", feature = "hickory-dns"))]
+pub use hickory::HickoryAsyncDNSResolver;
