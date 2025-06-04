@@ -5,6 +5,7 @@
 #![cfg(all(feature = "hickory-dns", feature = "tokio-comp"))]
 
 use redis::io::HickoryAsyncDNSResolver;
+use redis::io::AsyncDNSResolver;
 
 #[tokio::test]
 async fn test_hickory_resolver_localhost() {

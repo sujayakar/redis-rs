@@ -26,16 +26,15 @@ impl AsyncDNSResolver for HickoryAsyncDNSResolver {
         port: u16,
     ) -> RedisFuture<'a, Box<dyn Iterator<Item = SocketAddr> + Send + 'a>> {
         async move {
-            use hickory_resolver::TokioAsyncResolver;
+            use hickory_resolver::Resolver;
+            use hickory_resolver::name_server::TokioConnectionProvider;
 
             // Build a resolver using the host system configuration (/etc/resolv.conf etc.).
-            let resolver = TokioAsyncResolver::tokio_from_system_conf()
-                .await
-                .map_err(|e| RedisError::from((
-                    ErrorKind::IoError,
-                    "Failed to create Hickory resolver from system configuration",
-                    e.to_string(),
-                )))?;
+            let resolver = Resolver::builder_with_config(
+                hickory_resolver::config::ResolverConfig::default(),
+                TokioConnectionProvider::default(),
+            )
+            .build();
 
             // Perform the lookup.
             let response = resolver

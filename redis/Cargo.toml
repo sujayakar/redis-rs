@@ -113,7 +113,7 @@ hashbrown = { version = "0.15", optional = true }
 
 lru = { version = "0.14", optional = true }
 
-hickory-resolver = { version = "0.25", optional = true, default-features = false, features = ["tokio-runtime", "system-config"] }
+hickory-resolver = { version = "0.25", optional = true, default-features = false, features = ["tokio", "system-config"] }
 
 [features]
 default = ["acl", "streams", "geospatial", "script", "keep-alive", "num-bigint"]
