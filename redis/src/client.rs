@@ -1,13 +1,22 @@
+#[cfg(feature = "sync-io")]
 use std::time::Duration;
 
 #[cfg(feature = "aio")]
 use crate::aio::{AsyncPushSender, DefaultAsyncDNSResolver};
 #[cfg(feature = "aio")]
 use crate::io::{tcp::TcpSettings, AsyncDNSResolver};
+
+#[cfg(feature = "sync-io")]
+use crate::connection::{connect, Connection, ConnectionLike};
+
 use crate::{
-    connection::{connect, Connection, ConnectionInfo, ConnectionLike, IntoConnectionInfo},
-    types::{RedisResult, Value},
+    connection::{ConnectionInfo, IntoConnectionInfo},
+    types::RedisResult,
 };
+
+#[cfg(feature = "sync-io")]
+use crate::types::Value;
+
 #[cfg(feature = "aio")]
 use std::pin::Pin;
 
@@ -34,15 +43,19 @@ pub struct Client {
 ///
 /// When opening a client a URL in the following format should be used:
 ///
-/// ```plain
-/// redis://host:port/db
+/// ```text
+/// valkey://[<username>][:<password>@]<hostname>[:port][/<db>]
+/// redis://[<username>][:<password>@]<hostname>[:port][/<db>]
 /// ```
 ///
 /// Example usage::
 ///
 /// ```rust,no_run
+/// # #[cfg(feature = "sync-io")]
+/// # {
 /// let client = redis::Client::open("redis://127.0.0.1/").unwrap();
 /// let con = client.get_connection().unwrap();
+/// # }
 /// ```
 impl Client {
     /// Connects to a redis server and returns a client.  This does not
@@ -59,6 +72,7 @@ impl Client {
     /// commands to the server.  This can fail with a variety of errors
     /// (like unreachable host) so it's important that you handle those
     /// errors.
+    #[cfg(feature = "sync-io")]
     pub fn get_connection(&self) -> RedisResult<Connection> {
         connect(&self.connection_info, None)
     }
@@ -68,6 +82,7 @@ impl Client {
     /// can be used to send commands to the server.  This can fail with
     /// a variety of errors (like unreachable host) so it's important
     /// that you handle those errors.
+    #[cfg(feature = "sync-io")]
     pub fn get_connection_with_timeout(&self, timeout: Duration) -> RedisResult<Connection> {
         connect(&self.connection_info, Some(timeout))
     }
@@ -883,6 +898,7 @@ impl Client {
 #[cfg(feature = "aio")]
 use crate::aio::Runtime;
 
+#[cfg(feature = "sync-io")]
 impl ConnectionLike for Client {
     fn req_packed_command(&mut self, cmd: &[u8]) -> RedisResult<Value> {
         self.get_connection()?.req_packed_command(cmd)
