@@ -21,6 +21,9 @@ socket2 = "0.5"
 rand = "0.9"
 
 [features]
+# Enable with `features = ["inmemory"]` to compile the high-fidelity in-process mock.
+default = []
+inmemory = []
 aio = ["futures", "redis/aio"]
 
 [dev-dependencies]

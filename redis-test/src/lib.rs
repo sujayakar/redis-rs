@@ -27,6 +27,7 @@ pub mod cluster;
 pub mod sentinel;
 pub mod server;
 pub mod utils;
+#[cfg(feature = "inmemory")]
 pub mod inmemory;
 
 use std::collections::VecDeque;
