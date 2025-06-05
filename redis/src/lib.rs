@@ -91,6 +91,7 @@
 //! if so desired.  Some of them are turned on by default.
 //!
 //! * `acl`: enables acl support (enabled by default)
+//! * `sync-io`: enables synchronous IO support (enabled by default)
 //! * `tokio-comp`: enables support for async usage with the Tokio runtime (optional)
 //! * `async-std-comp`: enables support for async usage with any runtime which is async-std compliant. (optional)
 //! * `smol-comp`: enables support for async usage with the Smol runtime (optional)
@@ -576,14 +577,25 @@ pub use crate::client::Client;
 #[cfg(feature = "cache-aio")]
 pub use crate::cmd::CommandCacheConfig;
 pub use crate::cmd::{cmd, pack_command, pipe, Arg, Cmd, Iter};
+#[cfg(feature = "sync-io")]
 pub use crate::commands::{
     Commands, ControlFlow, CopyOptions, Direction, FlushAllOptions, FlushDbOptions,
     HashFieldExpirationOptions, LposOptions, PubSubCommands, ScanOptions, SetOptions,
     TypedCommands,
 };
+#[cfg(not(feature = "sync-io"))]
+pub use crate::commands::{
+    ControlFlow, CopyOptions, Direction, FlushAllOptions, FlushDbOptions,
+    HashFieldExpirationOptions, LposOptions, ScanOptions, SetOptions,
+};
+#[cfg(feature = "sync-io")]
 pub use crate::connection::{
     parse_redis_url, transaction, Connection, ConnectionAddr, ConnectionInfo, ConnectionLike,
     IntoConnectionInfo, Msg, PubSub, RedisConnectionInfo, TlsMode,
+};
+#[cfg(not(feature = "sync-io"))]
+pub use crate::connection::{
+    parse_redis_url, ConnectionAddr, ConnectionInfo, IntoConnectionInfo, RedisConnectionInfo, TlsMode,
 };
 pub use crate::parser::{parse_redis_value, Parser};
 pub use crate::pipeline::Pipeline;
@@ -735,6 +747,7 @@ mod tests {
     fn test_is_send() {
         const fn assert_send<T: Send>() {}
 
+        #[cfg(feature = "sync-io")]
         assert_send::<Connection>();
         #[cfg(feature = "cluster")]
         assert_send::<cluster::ClusterConnection>();

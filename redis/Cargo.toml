@@ -114,12 +114,13 @@ hashbrown = { version = "0.15", optional = true }
 lru = { version = "0.14", optional = true }
 
 [features]
-default = ["acl", "streams", "geospatial", "script", "keep-alive", "num-bigint"]
+default = ["acl", "streams", "geospatial", "script", "keep-alive", "num-bigint", "sync-io"]
 acl = []
 geospatial = []
 json = ["dep:serde", "serde/derive", "dep:serde_json"]
 cluster = ["dep:crc16", "dep:rand"]
 script = ["dep:sha1_smol"]
+sync-io = []
 tls-native-tls = ["dep:native-tls"]
 tls-rustls = [
   "dep:rustls",
