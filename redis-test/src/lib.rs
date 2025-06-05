@@ -27,6 +27,7 @@ pub mod cluster;
 pub mod sentinel;
 pub mod server;
 pub mod utils;
+pub mod inmemory;
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
